@@ -1,4 +1,6 @@
-﻿using JwtTokenServiceDemo.Models;
+﻿using JwtTokenService.DataAccess;
+using JwtTokenService.DataAccess.Models;
+using JwtTokenServiceDemo.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -11,28 +13,48 @@ namespace JwtTokenServiceDemo.Controllers
     [ApiController]
     public class AuthController : ControllerBase
     {
-        public static User user = new User();
+        #region Member Variables
+
+        private readonly CosmosDBContext context;
         private readonly IConfiguration configuration;
 
-        public AuthController(IConfiguration configuration) {
+        #endregion Member Variables
+
+        #region Constructors
+
+        public AuthController(IConfiguration configuration, CosmosDBContext context) {
             this.configuration = configuration;
+            this.context = context;
         }
+
+        #endregion Constructors
+
+        #region Actions
 
         [HttpPost("register")]
         public ActionResult<User> Register(UserDto request)
         {
+            var user = context.Users.FirstOrDefault(x => x.Username.ToLower().Equals(request.Username.ToLower().Trim()));
+            if (user != null)
+            {
+                return BadRequest("User already exists.");
+            }
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
-            user.Username = request.Username;
-            user.PasswordHash = passwordHash;
-
+            user = new User
+            {
+                Username = request.Username,
+                PasswordHash = passwordHash
+            };
+            context.Users.Add(user);
+            context.SaveChanges();
             return Ok(user);
         }
 
         [HttpPost("login")]
         public ActionResult<User> Login(UserDto request)
         {
-            // Look for user in db
-            if (user.Username != request.Username)
+            var user = context.Users.FirstOrDefault(x => x.Username.ToLower().Equals(request.Username.ToLower().Trim()));
+            if (user == null)
             {
                 return BadRequest("User not found");
             }
@@ -43,6 +65,10 @@ namespace JwtTokenServiceDemo.Controllers
             var token = CreateToken(user);
             return Ok(token);
         }
+
+        #endregion Actions
+
+        #region Utilities
 
         private string CreateToken(User user)
         {
@@ -58,5 +84,7 @@ namespace JwtTokenServiceDemo.Controllers
             var jwt = new JwtSecurityTokenHandler().WriteToken(jwtToken);
             return jwt;
         }
+
+        #endregion Utilities
     }
 }
